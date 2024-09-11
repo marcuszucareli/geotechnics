@@ -5,6 +5,8 @@ import matplotlib.colors as mcolors
 import logging
 import ezdxf
 
+from ezdxf.enums import TextEntityAlignment
+
 # logging
 logging.basicConfig(
     level=logging.INFO,  # Define o nível de log
@@ -13,7 +15,7 @@ logging.basicConfig(
 
 logger = logging.getLogger('borehole2D')
 
-# List of layers to create
+# Dict of layers and their colors used in the drawing
 layers = {
     'legend_boxes': (255,255,255),
     'legend_text': (255,255,255),
@@ -24,11 +26,22 @@ layers = {
 }
 
 
-# Evaluate colors sent by user, 
 def evaluate_colors(colors, df):
+    """
+    Evaluate colors sent by user
+    
+    :param colors: The colors dict with materials as keys and colors as values (RGB, HEX)
+    :type colors: dict
+    
+    :param df: When True the drawing will have the top of all boreholes set to y = 0 in CAD, instead of it's elevation.
+    :type df: pd.DataFrame
+    
+    :return: True if the colors match the requirements for all materials and the dict with the colors in rgb tuples.
+    :rtype: tuple(bool, dict)
+    """
     
     materials = list(df['material'].unique())
-    colorlist = {}
+    colorsdict = {}
     
     for material in materials:
         
@@ -39,9 +52,9 @@ def evaluate_colors(colors, df):
         
         # Evaluate if it's a valid color
         if type(colors[material]) == tuple:
-            color = tuple(c / 255 for c in colors[material])
+            color = tuple(c / 255 for c in colors[material])    # If it's RGB
         else:
-            color = mcolors.to_rgb(colors[material])
+            color = mcolors.to_rgb(colors[material])            # If it's HEX
         
         is_valid_color = mcolors.is_color_like(color)
         
@@ -50,17 +63,28 @@ def evaluate_colors(colors, df):
             return False, {}
         else:
             rgb = tuple(int(x * 255) for x in color)
-            colorlist[material] = rgb
+            colorsdict[material] = rgb
             
-    return True, colorlist
+    return True, colorsdict
     
 
-# Get a list with n_colors of a coloscale
 def get_colors(colorscale, materials):
+    """
+    Create the colors dict to be used in the drawing when they are not provided.
+    
+    :param colorscale: The colorscale to be used to create the colorslist.
+    :type colorscale: str
+    
+    :param materials: List with the names of the materials.
+    :type materials: list[str]
+    
+    :return: The dict with the materials as keys and their colors in rgb tuples as values.
+    :rtype: dict
+    """
     
     try:
         
-        colorlist = {}
+        colorsdict = {}
         c_map = matplotlib.colormaps.get_cmap(colorscale)
         colors_array = np.linspace(0, 1, len(materials))
         
@@ -71,55 +95,46 @@ def get_colors(colorscale, materials):
             rgb = mcolors.to_rgb(rgba)
             rgb = tuple(int(x * 255) for x in rgb)
             
-            colorlist[materials[i]] = rgb
+            colorsdict[materials[i]] = rgb
             
             i += 1
                         
     except:
-        raise ValueError('Error creating the colors dict')
+        raise ValueError(f'Error creating the colors dict. Verify the colorscale name you provided: {colorscale}')
     
-    return colorlist
+    return colorsdict
 
 
-# Draw logs
-def draw_log(df, msp):
-    
-    # Draw the hatch's
-    for row in df.iterrows():
-        
-        # Get the coordinate of the layer
-        y_1 = row[1].y1
-        y_2 = row[1].y2
-        x_1 = row[1].x1
-        x_2 = row[1].x2
-
-        # Get the material name
-        material = row[1].material
-
-        # Create hatch entity first, so it will be showed back of the lines // Color 256 = By Layer
-        hatch = msp.add_hatch(color=256, dxfattribs={'layer': material})
-
-        # Draw the square using polyline in the given layer
-        points = [(x_1, -y_1), (x_2, -y_1), (x_2, -y_2), (x_1, -y_2)]
-        
-        # Create the Polyline to further association
-        lwpolyline = msp.add_lwpolyline(points, format="xyb", close=True,  dxfattribs={'layer': 'borehole_boxes'})
-
-        # Polyline path for hatch create the draw
-        path = hatch.paths.add_polyline_path(
-            
-            # get path vertices from associated LWPOLYLINE entity
-            lwpolyline.get_points(format="xyb"),
-            
-            # get closed state also from associated LWPOLYLINE entity
-            is_closed=lwpolyline.closed,
-        )
-        # Set association between boundary path and LWPOLYLINE
-        hatch.associate(path, [lwpolyline])
-
-# Calculate the coordinates of the boreholes boxes for each layer
 def boreholes_coords(df, borehole_thickness, space_between_boreholes, elevation, draw_on_zero):
-
+    """
+    Create the coordinates needed to draw the boxes and hatches of the layers.
+    
+    :param df: DataFrame of boreholes data where each row represents a material layer with the following boreholes parameters:
+        - 'borehole_name' (str): Name of the borehole to which this layer belongs,
+        - 'start' (int or float): Start depth or elevation of the layer. If using elevation, make sure to set elevation parameter to True,\
+            also when selecting depth, it is assumed that the initial value is zero and it will increase positively with the depth of the borehole.
+        - 'end' (int or float): End depth or elevation of the layer. If using elevation, make sure to set elevation parameter to True,\
+            also when selecting depth, it is assumed that the initial value is zero and it will increase positively with the depth of the borehole.
+        - 'material' (str): Material of the layer
+    :type df: pd.DataFrame
+       
+    :param borehole_thickness: Diameter of the borehole.
+    :type borehole_thickness: float
+    
+    :param space_between_boreholes: Space given between each borehole in the drawing.
+    :type space_between_boreholes: float
+    
+    :param elevation: True when using elevation instead of borehole depth as input.
+    :type elevation: bool
+    
+    :param draw_on_zero: When True the drawing will have the top of all boreholes set to y = 0 in CAD, instead of it's elevation.
+    :type draw_on_zero: bool
+    
+    :return: df containing the coordinates needed to draw the boxes and hatches of the layers.
+    :rtype: pd.DataFrame
+     
+    """
+    
     df['multiplier'] = pd.Categorical(df['borehole_name']).codes
     df['x1'] = (borehole_thickness + space_between_boreholes) * df['multiplier']
     df['x2'] = borehole_thickness + df['x1']
@@ -140,6 +155,123 @@ def boreholes_coords(df, borehole_thickness, space_between_boreholes, elevation,
             df['y2'] = -df['end']
     
     return df
+
+
+def draw_log(df, msp):
+    """
+    Draw the logs boxes as polylines and hatches
+    
+    :param df: The dataframe with the material and box coordinates of each layer of each borehole. 
+    :type df: pd.Dataframe
+    
+    :param msp: ezdxf modelspace entity where the drawing will be created
+    :type msp: ezdxf.new().modelspace()
+    
+    :return: None
+    :rtype: None
+    """
+    
+    # Draw the hatch's
+    for row in df.iterrows():
+        
+        # Get the coordinate of the layer
+        y_1 = row[1].y1
+        y_2 = row[1].y2
+        x_1 = row[1].x1
+        x_2 = row[1].x2
+
+        # Get the material name
+        material = row[1].material
+
+        # Create hatch entity first, so it will be showed back of the lines // Color 256 = By Layer
+        hatch = msp.add_hatch(color=256, dxfattribs={'layer': material})
+
+        # Draw the square using polyline in the given layer
+        points = [(x_1, y_1), (x_2, y_1), (x_2, y_2), (x_1, y_2)]
+        
+        # Create the Polyline to further association
+        lwpolyline = msp.add_lwpolyline(points, format="xyb", close=True,  dxfattribs={'layer': 'borehole_boxes'})
+
+        # Polyline path for hatch create the draw
+        path = hatch.paths.add_polyline_path(
+            
+            # get path vertices from associated LWPOLYLINE entity
+            lwpolyline.get_points(format="xyb"),
+            
+            # get closed state also from associated LWPOLYLINE entity
+            is_closed=lwpolyline.closed,
+        )
+        # Set association between boundary path and LWPOLYLINE
+        hatch.associate(path, [lwpolyline])
+
+
+def draw_legend(colors, msp):
+    """
+    Draw the legend in the drawing
+    
+    :param colors: Dict with material names as keys and RGB colors as values
+    :type colors: dict[str, (int, int, int)]
+    
+    :param msp: ezdxf modelspace entity where the drawing will be created
+    :type msp: ezdxf.new().modelspace()
+    
+    :return: None
+    :rtype: None
+    """
+    
+    multiplier = 0
+    
+    box_heigth = 1
+    distance_between_boxes = .5
+    
+    # Draw legend
+    for material, color in colors.items():
+
+        
+        
+        # Calculate the initial y1 coordinate
+        y_1 = - box_heigth - multiplier * (box_heigth + distance_between_boxes)
+        
+        # Calculate the x1 coordinate of the material
+        x_1 = -20
+
+        # Define the 4 polyline points of the box and the text start
+        p1 = (x_1, y_1)
+        p2 = (x_1, y_1 + box_heigth)
+        p3 = (x_1 + 1.618, y_1 + box_heigth)
+        p4 = (x_1 + 1.618, y_1)
+        p5 = (x_1 + 1.618 + 1, y_1)
+
+        # Create hatch entity first, so it will be showed back of the lines // Color 256 = By Layer
+        hatch = msp.add_hatch(color=256, dxfattribs={'layer': material})
+
+        # Draw the squares using polyline in the given layer
+        points = [p1, p2, p3, p4, p1]
+        
+        # Create the Polyline to further association
+        lwpolyline = msp.add_lwpolyline(points, format="xyb", close=True,  dxfattribs={'layer': 'legend_boxes'})
+
+        # Polyline path for hatch create the draw
+        path = hatch.paths.add_polyline_path(
+            # get path vertices from associated LWPOLYLINE entity
+            lwpolyline.get_points(format="xyb"),
+            # get closed state also from associated LWPOLYLINE entity
+            is_closed=lwpolyline.closed,
+        )
+        # Set association between boundary path and LWPOLYLINE
+        hatch.associate(path, [lwpolyline])
+
+        # Write the name of the material
+        msp.add_text(
+            material,
+            dxfattribs={
+                'height': 1,
+                'layer': 'legend_text',
+            }
+        ).set_placement(p5, align=TextEntityAlignment.LEFT)
+        
+        multiplier += 1
+
 
 
 def borehole2D(
@@ -254,7 +386,7 @@ def borehole2D(
     
     # Calculate boreholes points coordinates for each layer
     df = boreholes_coords(df, borehole_thickness, space_between_boreholes, elevation, draw_on_zero)
-    
+
     # Create a new DXF drawing
     doc = ezdxf.new()
 
@@ -277,10 +409,13 @@ def borehole2D(
         
         i += 1
     
-    # Draw the associative hatchs and boxes of the logs
+    # Draw the associative hatches and boxes of the logs
     draw_log(df, msp)
     
-    doc.saveas("borehole_logs.dxf")
+    # Draw legend
+    draw_legend(evaluated_colors, msp)
+    
+    doc.saveas("borehole_logs3.dxf")
     
     
 colors = {
@@ -288,8 +423,8 @@ colors = {
     'clay 2': '#ffffff',
     'sand 1': '#ffffff',
     'sand 2': '#f0f0f0',
-    # 'rock 1': (0, 0, 0)
+    'rock 1': (0, 0, 0)
 }
 
 df = pd.read_excel('./tests/data/t_borehole2D.xlsx')
-borehole2D(df, colors=colors)
+borehole2D(df, elevation=True, draw_on_zero=False)
