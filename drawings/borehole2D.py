@@ -347,7 +347,7 @@ def draw_borehole_name(df, msp):
             borehole[0],
             dxfattribs={
                 'height': .5,
-                'layer': 'dimension_text',
+                'layer': 'borehole_text',
             }
         ).set_placement((x,y), align=TextEntityAlignment.CENTER)
 
