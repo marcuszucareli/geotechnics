@@ -19,10 +19,9 @@ logger = logging.getLogger('borehole2D')
 layers = {
     'legend_boxes': (255,255,255),
     'legend_text': (255,255,255),
-    'depth_bar_box': (255,255,255),
-    'depth_bar_text': (255,255,255),
-    'borehole_name': (255,255,255),
-    'borehole_boxes': (255,255,255)
+    'dimension_text': (255,255,255),
+    'borehole_boxes': (255,255,255),
+    'borehole_text': (255,255,255),
 }
 
 
@@ -273,19 +272,98 @@ def draw_legend(colors, msp):
         multiplier += 1
 
 
+def draw_dimension(df, msp):
+    """
+    Draw the legend in the drawing
+    
+    :param df: The dataframe with the material and box coordinates of each layer of each borehole. 
+    :type df: pd.Dataframe
+    
+    :param msp: ezdxf modelspace entity where the drawing will be created
+    :type msp: ezdxf.new().modelspace()
+    
+    :return: None
+    :rtype: None
+    """
+    
+    drew_layers = []
+
+    for row in df.iterrows():
+        
+        x_start = row[1].x1 - .5
+        y_start = row[1].y1
+        dimension_start = str(round(row[1].start, 2))
+        
+        x_end = row[1].x1 - .5
+        y_end = row[1].y2
+        dimension_end = str(round(row[1].end, 2))
+        
+        start_dimension_info = ((x_start, y_start), dimension_start)
+        end_dimension_info = ((x_end, y_end), dimension_end)
+        
+        dimensions_to_draw = [start_dimension_info, end_dimension_info]
+        
+        for dimension in dimensions_to_draw:
+            
+            is_drew = dimension in drew_layers
+            
+            if not is_drew:
+                
+                # Write the dimension
+                msp.add_text(
+                    dimension[1],
+                    dxfattribs={
+                        'height': .5,
+                        'layer': 'dimension_text',
+                    }
+                ).set_placement(dimension[0], align=TextEntityAlignment.MIDDLE_RIGHT)
+                
+                drew_layers.append(dimension)
+
+
+def draw_borehole_name(df, msp):
+    """
+    Draw the legend in the drawing
+    
+    :param df: The dataframe with the material and box coordinates of each layer of each borehole. 
+    :type df: pd.Dataframe
+    
+    :param msp: ezdxf modelspace entity where the drawing will be created
+    :type msp: ezdxf.new().modelspace()
+    
+    :return: None
+    :rtype: None
+    """
+    
+    boreholes = df.groupby('borehole_name').first()
+    
+    for borehole in boreholes.iterrows():
+        
+        x = (borehole[1].x1 + borehole[1].x2) / 2
+        y = max(borehole[1].y1, borehole[1].y2) + 2
+        
+        # Write borehole name
+        msp.add_text(
+            borehole[0],
+            dxfattribs={
+                'height': .5,
+                'layer': 'dimension_text',
+            }
+        ).set_placement((x,y), align=TextEntityAlignment.CENTER)
+
 
 def borehole2D(
     df,
-    path='',
-    file_name='borehole2D.dxf',
-    colors=None,
-    colorscale='Pastel1',
+    elevation = False,
     borehole_thickness=1,
     space_between_boreholes=5,
     legend = True,
-    draw_name = True,
-    elevation = False,
-    draw_on_zero = True
+    borehole_name = True,
+    dimension = True,
+    draw_on_zero = True,
+    colors=None,
+    colorscale='Pastel1',
+    path='borehole2D.dxf',
     ):
     """
     Draw 2D boreholes in a dxf file.
@@ -299,11 +377,8 @@ def borehole2D(
         - 'material' (str): Material of the layer
     :type df: pd.DataFrame
     
-    :param path: Folder path where you want to store the output file.
+    :param path: Path to store the output file. Must end with the extension ".dxf"
     :type path: str
-    
-    :param file_name: Name of the output file. Must end with the extension ".dxf".
-    :type file_name: str
     
     :param colors: Dict with material names as keys and colors as values. Colors can be specified as RGB tuples (255,255,255) or HEX (#ffffff).
     :type colors: dict[str, Any]
@@ -321,8 +396,11 @@ def borehole2D(
     :param legend: True for drawing the materials legend.
     :type legend: bool
     
-    :param draw_name: True for drawing the borehole name above it.
-    :type draw_name: bool
+    :param borehole_name: True for drawing the borehole name above it.
+    :type borehole_name: bool
+    
+    :param dimension: True for writing the depth or elevation of each layer.
+    :type dimension: bool
     
     :param elevation: True when using elevation instead of borehole depth as input.
     :type elevation: bool
@@ -393,38 +471,32 @@ def borehole2D(
     # Add new entities to the modelspace:
     msp = doc.modelspace()
 
-    print(evaluated_colors)
-    i = 0
     # Create a layer for each material
     for material in pd.unique(df['material']):
         layer = doc.layers.add(material)
         layer.rgb = evaluated_colors[material]
         
-        i += 1
-        
     # Create other necessary layers
     for layer, color in layers.items():
         layer = doc.layers.add(layer)
         layer.rgb = color
-        
-        i += 1
     
     # Draw the associative hatches and boxes of the logs
     draw_log(df, msp)
     
     # Draw legend
-    draw_legend(evaluated_colors, msp)
+    if legend:
+        draw_legend(evaluated_colors, msp)
+        
+    # Draw dimension
+    if dimension:
+        draw_dimension(df, msp)
     
-    doc.saveas("borehole_logs3.dxf")
+    # Draw borehole name
+    if borehole_name:
+        draw_borehole_name(df, msp)
     
-    
-colors = {
-    'clay 1': '#ffffff',
-    'clay 2': '#ffffff',
-    'sand 1': '#ffffff',
-    'sand 2': '#f0f0f0',
-    'rock 1': (0, 0, 0)
-}
-
-df = pd.read_excel('./tests/data/t_borehole2D.xlsx')
-borehole2D(df, elevation=True, draw_on_zero=False)
+    try:
+        doc.saveas(path)
+    except:
+        raise ValueError(f'Error saving the drawing. Verify the path parameter.')
