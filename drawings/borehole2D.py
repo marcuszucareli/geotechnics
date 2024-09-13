@@ -9,8 +9,8 @@ from ezdxf.enums import TextEntityAlignment
 
 # logging
 logging.basicConfig(
-    level=logging.INFO,  # Define o nível de log
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'  # Formato das mensagens
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 
 logger = logging.getLogger('borehole2D')
