@@ -41,7 +41,7 @@ def evaluate_colors(colors, df):
     
     materials = list(df['material'].unique())
     colorsdict = {}
-    
+
     for material in materials:
         
         # Evaluate if this material has a color
@@ -49,14 +49,17 @@ def evaluate_colors(colors, df):
             logger.info(f'There is no color for {material}. The dxf will be created with the program default colors.')
             return False, {}
         
-        # Evaluate if it's a valid color
-        if type(colors[material]) == tuple:
-            color = tuple(c / 255 for c in colors[material])    # If it's RGB
-        else:
-            color = mcolors.to_rgb(colors[material])            # If it's HEX
+        try:
+            # Evaluate if it's a valid color
+            if type(colors[material]) == tuple:
+                color = tuple(c / 255 for c in colors[material])    # If it's RGB
+            else:
+                color = mcolors.to_rgb(colors[material])            # If it's HEX
         
-        is_valid_color = mcolors.is_color_like(color)
-        
+            is_valid_color = mcolors.is_color_like(color)
+        except:
+            is_valid_color = False
+
         if not is_valid_color:
             logger.info(f'{material} has a non-valid color. The dxf will be created with the program default colors.')
             return False, {}
@@ -427,6 +430,7 @@ def borehole2D(
     # Transform non strings into strings in borehole_name and material columns
     df['borehole_name'] = df['borehole_name'].apply(lambda x: str(x))
     df['material'] = df['material'].apply(lambda x: str(x))
+    df['material'] = df[material].fillna('unspecified soil')
     
     # Exclude the lines where initial or final depth are not numbers
     value_error = df[(df['eval_start'] == False) | (df['eval_end'] == False)]
