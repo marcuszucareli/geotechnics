@@ -3,8 +3,16 @@ import logging
 import pandas as pd
 import matplotlib.colors as mcolors
 
-from geotechnics.drawings.borehole2D.borehole2D import evaluate_colors, get_colors
+from pandas.testing import assert_frame_equal
+from geotechnics.drawings.borehole2D.borehole2D import *
 
+# Inputs and outputs data for this tests
+@pytest.fixture(scope='session')
+def reader():
+
+    data = pd.read_excel(r'tests/drawings/data/t_boreholes_coords_outputs.xlsx')
+    
+    return data
 
 #------------------------------- evaluate_colors
 @pytest.mark.parametrize("colors, df",[
@@ -119,3 +127,40 @@ def test_get_colors_failed_colormap_name(materials, caplog):
             
             assert type(colorsdict) == dict
             assert 'Error creating the colors dict.' in caplog.text
+
+
+#------------------------------- boreholes_coords
+def test_boreholes_coords(reader): 
+    
+    input_columns = ['borehole_name', 'start', 'end', 'material']
+    output_columns = ['x1', 'x2', 'y1', 'y2']
+    comparison_output_columns = [f'{column}_output' for column in output_columns ]
+    test_cases = reader[reader['test_function'] == 'test_boreholes_coords']
+    
+    groups = test_cases.groupby('scenario')
+    
+    for scenario, group in groups:
+        
+        df = group[input_columns].copy()
+        borehole_thickness = group['borehole_thickness'].iloc[0]
+        space_between_boreholes = group['space_between_boreholes'].iloc[0]
+        elevation = bool(group['elevation'].iloc[0])
+        draw_on_zero = bool(group['draw_on_zero'].iloc[0])
+        
+        function_output = boreholes_coords(df, borehole_thickness, space_between_boreholes, elevation, draw_on_zero)
+        function_output = function_output[output_columns]
+        
+        comparison_output = group[comparison_output_columns]
+        comparison_output.columns = output_columns
+        
+        try:
+            assert_frame_equal(function_output, comparison_output, check_dtype=False)
+            print(f'\nEvaluated scenario: {scenario}. It is ok!')
+            assert True
+        except AssertionError as e:
+            print(f'\nError on scenario {scenario}')
+            print(f'{e}')
+            assert False
+        
+        
+    
