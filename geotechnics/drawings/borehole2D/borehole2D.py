@@ -32,7 +32,7 @@ def evaluate_colors(colors, df):
     :param colors: The colors dict with materials as keys and colors as values (RGB, HEX)
     :type colors: dict
     
-    :param df: When True the drawing will have the top of all boreholes set to y = 0 in CAD, instead of it's elevation.
+    :param df: DataFrame of boreholes data where each row represents a material layer.
     :type df: pd.DataFrame
     
     :return: True if the colors match the requirements for all materials and the dict with the colors in rgb tuples.

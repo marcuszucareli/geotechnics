@@ -1,4 +1,4 @@
-import drawings
+from .drawings import *
 
 # Metadata
 __version__ = '0.1.0'

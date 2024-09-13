@@ -1,4 +1,4 @@
-from borehole2D import borehole2D
+from .borehole2D.borehole2D import *
 
 __all__ =['borehole2D']
 
