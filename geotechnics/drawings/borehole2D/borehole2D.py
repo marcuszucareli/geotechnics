@@ -430,7 +430,7 @@ def borehole2D(
     # Transform non strings into strings in borehole_name and material columns
     df['borehole_name'] = df['borehole_name'].apply(lambda x: str(x))
     df['material'] = df['material'].apply(lambda x: str(x))
-    df['material'] = df[material].fillna('unspecified soil')
+    df['material'] = df['material'].fillna('unspecified soil')
     
     # Exclude the lines where initial or final depth are not numbers
     value_error = df[(df['eval_start'] == False) | (df['eval_end'] == False)]
