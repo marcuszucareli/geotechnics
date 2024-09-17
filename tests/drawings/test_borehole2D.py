@@ -87,7 +87,36 @@ def get_dxf_data(dxf_file):
     
     return df_entities, df_layers
     
+
+def set_up_dxf(colors):
+    """
+    Creates a ezdxf doc and msp instance with the common layers
+    :param colors: Dict with material names as keys and RGB colors as values
+    :type colors: dict[str, (int, int, int)]
     
+    :return: ezdxf doc and modelspace entities. 
+    :rtype: ezdxf.new(), ezdxf.new().modelspace()
+    """
+    
+    # Create a new DXF drawing
+    doc = ezdxf.new()
+
+    # Add new entities to the modelspace:
+    msp = doc.modelspace()
+
+    # Create a layer for each material
+    for material in colors.keys():
+        layer = doc.layers.add(material)
+        layer.rgb = colors[material]
+        
+    # Create other necessary layers
+    for layer, color in layers.items():
+        layer = doc.layers.add(layer)
+        layer.rgb = color
+    
+    return doc, msp
+    
+     
 #------------------------------- evaluate_colors
 @pytest.mark.parametrize("colors, df",[
     (
@@ -258,21 +287,7 @@ def test_draw_log(reader, colors, scenario):
     df = reader.rename(columns={'x1_output': 'x1', 'x2_output': 'x2', 'y1_output': 'y1', 'y2_output': 'y2'})
     df = df[df['scenario'] == scenario]
     
-    # Create a new DXF drawing
-    doc = ezdxf.new()
-
-    # Add new entities to the modelspace:
-    msp = doc.modelspace()
-
-    # Create a layer for each material
-    for material in colors.keys():
-        layer = doc.layers.add(material)
-        layer.rgb = colors[material]
-        
-    # Create other necessary layers
-    for layer, color in layers.items():
-        layer = doc.layers.add(layer)
-        layer.rgb = color
+    doc, msp = set_up_dxf(colors)
     
     # Function test
     draw_log(df, msp)
@@ -283,7 +298,7 @@ def test_draw_log(reader, colors, scenario):
     we will save and re-read the file to ensure both files have the same structure.
     """
     
-    provisory_file_path = 'teste_log.dxf'
+    provisory_file_path = 'test_log.dxf'
     doc.saveas(provisory_file_path)
     
     test_df, layers_test_df = get_dxf_data(provisory_file_path)
@@ -315,3 +330,58 @@ def test_draw_log(reader, colors, scenario):
 
 
 #------------------------------- draw_legend
+@pytest.mark.parametrize(
+    'colors',
+    [
+        {
+            'clay 1': (251, 180, 174),
+            'clay 2': (204, 235, 197),
+            'sand 1': (254, 217, 166),
+            'sand 2': (229, 216, 189),
+            'rock 1': (242, 242, 242),
+        }
+    ]
+)
+@pytest.mark.parametrize('scenario', ['depth', 'elevation_elevation', 'elevation_zero'])
+def test_draw_legend(colors, scenario):
+    
+    doc, msp = set_up_dxf(colors)
+    
+    # Function test
+    draw_legend(colors, msp)
+    
+    """
+    ezdxf may lose or change some information when a file is saved. \
+    Since we are comparing it with an existing file, \
+    we will save and re-read the file to ensure both files have the same structure.
+    """
+    
+    provisory_file_path = 'test_legend.dxf'
+    doc.saveas(provisory_file_path)
+    
+    test_df, layers_test_df = get_dxf_data(provisory_file_path)
+    reference_df, layers_reference_df = get_dxf_data(f'tests/drawings/data/legend_{scenario}.dxf')
+   
+    # Assert all attributes but color
+    try:
+        assert_frame_equal(test_df, reference_df, check_dtype=False, check_index_type=False)
+        assert True
+    except AssertionError as e:
+        print(f'{e}')
+        assert False
+        
+    # Assert color
+    """
+    The color attribute for the hatchs is by layer (color=256).
+    In order to assert the colors of hatches, compare the colors of the layers.
+    """
+    
+    try:
+        assert_frame_equal(layers_test_df, layers_reference_df, check_dtype=False, check_index_type=False)
+        assert True
+    except AssertionError as e:
+        print(f'{e}')
+        assert False
+    
+    if os.path.exists(provisory_file_path):
+        os.remove(provisory_file_path)
