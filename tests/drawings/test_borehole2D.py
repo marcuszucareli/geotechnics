@@ -13,7 +13,9 @@ from ezdxf.colors import int2rgb, aci2rgb
 @pytest.fixture(scope='session')
 def reader():
 
-    data = pd.read_excel(r'tests/drawings/data/t_boreholes_coords_outputs.xlsx')
+    data = pd.read_excel(
+        r'tests/drawings/data/t_boreholes_coords_outputs.xlsx'
+    )
     
     return data
 
@@ -25,7 +27,8 @@ def get_dxf_data(dxf_file):
     :param dxf_file: File path.
     :type dxf_file: string
     
-    :return: pandas DataFrame with all the entities data and other with all the layers data.
+    :return: pandas DataFrame with all the entities data and other with all\
+        the layers data.
     :rtype: pd.Dataframe, pd.Dataframe 
     """
 
@@ -143,7 +146,9 @@ def test_evaluate_colors_success(colors, df):
     
     for material, color in colors.items():
         if type(color) == str:
-            rgb_colors[material] = tuple(c * 255 for c in mcolors.to_rgb(colors[material]))
+            rgb_colors[material] = tuple(
+                c * 255 for c in mcolors.to_rgb(colors[material])
+            )
         else:
             rgb_colors[material] = color
     
@@ -212,7 +217,10 @@ def test_evaluate_colors_failed_no_color(colors, df, caplog):
 
 #------------------------------- get_colors
 @pytest.mark.parametrize('colorscale', ['Pastel1', 'Pastel2', 'Accent'])
-@pytest.mark.parametrize('materials', [('clay'), ('clay', 'sand'), ('clay', 'sand', 'rock')])
+@pytest.mark.parametrize(
+    'materials',
+    [('clay'), ('clay', 'sand'), ('clay', 'sand', 'rock')]
+)
 def test_get_colors_success(colorscale, materials):
     
     colorsdict = get_colors(colorscale, materials)
@@ -221,7 +229,10 @@ def test_get_colors_success(colorscale, materials):
     assert all(material in colorsdict for material in materials)
 
 
-@pytest.mark.parametrize('materials', [('clay'), ('clay', 'sand'), ('clay', 'sand', 'rock')])
+@pytest.mark.parametrize(
+    'materials',
+    [('clay'), ('clay', 'sand'), ('clay', 'sand', 'rock')]
+)
 def test_get_colors_failed_colormap_name(materials, caplog):
     
     with caplog.at_level(logging.INFO):
@@ -269,6 +280,23 @@ def test_boreholes_coords(reader):
 
 
 #------------------------------- draw_log
+#------------------------------- draw_legend
+#------------------------------- draw_dimension
+#------------------------------- draw_borehole_name
+"""
+All the drawing functions have the same test structure:
+- Create the drawing
+- Save the drawing
+- Read it again
+- Read the reference drawing
+- Create dataframes with the entities of both drawings
+- Compare the dataframes
+
+For this reason they are all covered in one test, parametrizes by 'function'
+
+Pytest combined with assert_frame_equal outputs can identify pretty well the
+tests cases when it failes.
+"""
 @pytest.mark.parametrize(
     'colors',
     [
@@ -281,32 +309,59 @@ def test_boreholes_coords(reader):
         }
     ]
 )
-@pytest.mark.parametrize('scenario', ['depth', 'elevation_elevation', 'elevation_zero'])
-def test_draw_log(reader, colors, scenario):
+@pytest.mark.parametrize(
+    'scenario',
+    ['depth', 'elevation_elevation', 'elevation_zero']
+)
+@pytest.mark.parametrize('function', ['dimension', 'log', 'name', 'legend'])
+def test_drawings(reader, colors, scenario, function):
     
-    df = reader.rename(columns={'x1_output': 'x1', 'x2_output': 'x2', 'y1_output': 'y1', 'y2_output': 'y2'})
+    df = reader.rename(
+        columns={
+            'x1_output': 'x1',
+            'x2_output': 'x2',
+            'y1_output': 'y1',
+            'y2_output': 'y2'
+        }
+    )
     df = df[df['scenario'] == scenario]
     
     doc, msp = set_up_dxf(colors)
     
     # Function test
-    draw_log(df, msp)
+    match function:
+        case 'dimension':
+            draw_dimension(df, msp)
+        case 'log':
+            draw_log(df, msp)
+        case 'name':
+            draw_borehole_name(df, msp)
+        case 'legend':
+            draw_legend(colors, msp)
     
     """
     ezdxf may lose or change some information when a file is saved. \
     Since we are comparing it with an existing file, \
-    we will save and re-read the file to ensure both files have the same structure.
+    we will save and re-read the file to ensure both files have the same \
+    structure.
     """
     
     provisory_file_path = 'test_log.dxf'
     doc.saveas(provisory_file_path)
     
+    reference_file_path = f'tests/drawings/data/{function}_{scenario}.dxf'
+    
     test_df, layers_test_df = get_dxf_data(provisory_file_path)
-    reference_df, layers_reference_df = get_dxf_data(f'tests/drawings/data/log_{scenario}.dxf')
+    reference_df, layers_reference_df = get_dxf_data(reference_file_path)
    
     # Assert all attributes but color
     try:
-        assert_frame_equal(test_df, reference_df, check_dtype=False, check_index_type=False)
+        assert_frame_equal(
+            test_df,
+            reference_df,
+            check_dtype=False,
+            check_index_type=False
+        )
         assert True
     except AssertionError as e:
         print(f'{e}')
@@ -315,69 +370,15 @@ def test_draw_log(reader, colors, scenario):
     # Assert color
     """
     The color attribute for the hatchs is by layer (color=256).
-    In order to assert the colors of hatches, compare the colors of the layers.
+    In order to assert their colors, compare the colors of their layers.
     """
-    
     try:
-        assert_frame_equal(layers_test_df, layers_reference_df, check_dtype=False, check_index_type=False)
-        assert True
-    except AssertionError as e:
-        print(f'{e}')
-        assert False
-    
-    if os.path.exists(provisory_file_path):
-        os.remove(provisory_file_path)
-
-
-#------------------------------- draw_legend
-@pytest.mark.parametrize(
-    'colors',
-    [
-        {
-            'clay 1': (251, 180, 174),
-            'clay 2': (204, 235, 197),
-            'sand 1': (254, 217, 166),
-            'sand 2': (229, 216, 189),
-            'rock 1': (242, 242, 242),
-        }
-    ]
-)
-@pytest.mark.parametrize('scenario', ['depth', 'elevation_elevation', 'elevation_zero'])
-def test_draw_legend(colors, scenario):
-    
-    doc, msp = set_up_dxf(colors)
-    
-    # Function test
-    draw_legend(colors, msp)
-    
-    """
-    ezdxf may lose or change some information when a file is saved. \
-    Since we are comparing it with an existing file, \
-    we will save and re-read the file to ensure both files have the same structure.
-    """
-    
-    provisory_file_path = 'test_legend.dxf'
-    doc.saveas(provisory_file_path)
-    
-    test_df, layers_test_df = get_dxf_data(provisory_file_path)
-    reference_df, layers_reference_df = get_dxf_data(f'tests/drawings/data/legend_{scenario}.dxf')
-   
-    # Assert all attributes but color
-    try:
-        assert_frame_equal(test_df, reference_df, check_dtype=False, check_index_type=False)
-        assert True
-    except AssertionError as e:
-        print(f'{e}')
-        assert False
-        
-    # Assert color
-    """
-    The color attribute for the hatchs is by layer (color=256).
-    In order to assert the colors of hatches, compare the colors of the layers.
-    """
-    
-    try:
-        assert_frame_equal(layers_test_df, layers_reference_df, check_dtype=False, check_index_type=False)
+        assert_frame_equal(
+            layers_test_df,
+            layers_reference_df,
+            check_dtype=False,
+            check_index_type=False
+        )
         assert True
     except AssertionError as e:
         print(f'{e}')
