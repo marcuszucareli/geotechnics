@@ -18,6 +18,76 @@ def reader():
     return data
 
 
+def get_dxf_data(dxf_file):
+    """
+    Retrieve information from dxf files and transform it into a dataframe
+    
+    :param dxf_file: File path.
+    :type dxf_file: string
+    
+    :return: pandas DataFrame with all the entities data and other with all the layers data.
+    :rtype: pd.Dataframe, pd.Dataframe 
+    """
+
+    doc = ezdxf.readfile(dxf_file)
+    msp = doc.modelspace()
+    
+    entities_list = []
+    layers_list = []
+    
+    # Iterate over all entities in the Modelspace
+    for entity in msp:
+        
+        # Get all attributes of the entity as a dictionary
+        entity_attribs = entity.dxfattribs()
+        
+        entity_attribs['entity_type'] = entity.dxftype()
+        
+        # Getting vertices lists in entityes with it
+        if entity.dxftype() == 'POLYLINE' or entity.dxftype() == 'LWPOLYLINE':
+            entity_attribs['vertices'] = list(entity.vertices())
+            
+        elif entity.dxftype() == 'HATCH':
+            for path in entity.paths.external_paths():
+                entity_attribs['vertices'] = list(path.vertices)
+               
+        # Add the color to the dictionary
+        color_index = entity.dxf.color
+        if entity.has_dxf_attrib("true_color"):
+            rgb = int2rgb(entity.dxf.true_color)
+        else:
+            if color_index == 256:
+                rgb = "BY LAYER"
+            else:
+                rgb = aci2rgb(color_index)
+        
+        entity_attribs['color'] = rgb
+        
+        entities_list.append(entity_attribs)
+
+    
+    for layer in doc.layers:
+            
+        layer_attributes = layer.dxfattribs()
+        
+        # Add the color to the dictionary
+        color_index = layer.color
+        if layer.has_dxf_attrib("true_color"):
+            rgb = int2rgb(layer.dxf.true_color)
+        else:
+            rgb = aci2rgb(color_index)
+        
+        layer_attributes['color'] = rgb
+        
+        layers_list.append(layer_attributes)
+
+    # Create the DataFrames from the lists of dictionaries
+    df_entities = pd.DataFrame(entities_list)
+    df_layers = pd.DataFrame(layers_list)
+    
+    return df_entities, df_layers
+    
+    
 #------------------------------- evaluate_colors
 @pytest.mark.parametrize("colors, df",[
     (
@@ -215,55 +285,11 @@ def test_draw_log(reader, colors, scenario):
     
     provisory_file_path = 'teste_log.dxf'
     doc.saveas(provisory_file_path)
-    doc = ezdxf.readfile(f'teste_log.dxf')
-    msp = doc.modelspace()
     
-    # Read comparison file
-    doc_reference = ezdxf.readfile(f'tests/drawings/data/log_{scenario}.dxf')
-    msp_reference = doc_reference.modelspace()
-    
-    modelspaces = {
-        'test': msp,
-        'reference': msp_reference,
-    }
-    
-    # List to store dictionaries with the attributes of each entity
-    msp_data = []
-
-    for origin, modelspace in modelspaces.items():
-        
-        # Iterate over all entities in the Modelspace
-        for entity in modelspace:
-            
-            # Get all attributes of the entity as a dictionary
-            entity_attribs = entity.dxfattribs()
-            
-            # Add the entity type to the dictionary
-            entity_attribs['entity_type'] = entity.dxftype()
-            
-            # Getting vertices in entityes with it
-            if entity.dxftype() == 'POLYLINE' or entity.dxftype() == 'LWPOLYLINE':
-                entity_attribs['vertices'] = list(entity.vertices())
-            elif entity.dxftype() == 'HATCH':
-                for path in entity.paths.external_paths():
-                    entity_attribs['vertices'] = list(path.vertices)
-            
-            # Add the origin to the dictionary
-            entity_attribs['origin'] = origin
-            
-            # Add the color to the dictionary
-            entity_attribs['color'] = entity.dxf.color
-            
-            # Append the entity's data to the list
-            msp_data.append(entity_attribs)
-
-    # Create the DataFrame from the list of dictionaries
-    df = pd.DataFrame(msp_data)
-    
+    test_df, layers_test_df = get_dxf_data(provisory_file_path)
+    reference_df, layers_reference_df = get_dxf_data(f'tests/drawings/data/log_{scenario}.dxf')
+   
     # Assert all attributes but color
-    test_df = df[df['origin'] == 'test'].reset_index(drop=True).drop(['origin'], axis=1)
-    reference_df = df[df['origin'] == 'reference'].reset_index(drop=True).drop(['origin'], axis=1)
-    
     try:
         assert_frame_equal(test_df, reference_df, check_dtype=False, check_index_type=False)
         assert True
@@ -276,35 +302,6 @@ def test_draw_log(reader, colors, scenario):
     The color attribute for the hatchs is by layer (color=256).
     In order to assert the colors of hatches, compare the colors of the layers.
     """
-    layers_data = []
-    
-    layers_origins = {
-        'test': doc,
-        'reference': doc_reference,
-    }
-    
-    for origin, dxf_file in layers_origins.items():
-        
-        for layer in dxf_file.layers:
-            
-            attributes = layer.dxfattribs()
-            attributes['origin'] = origin
-            
-            
-            color_index = layer.color
-            if layer.has_dxf_attrib("true_color"):
-                rgb = int2rgb(layer.dxf.true_color)
-            else:
-                rgb = aci2rgb(color_index)
-            
-            attributes['color'] = rgb
-            
-            layers_data.append(attributes)
-    
-    df_layers = pd.DataFrame(layers_data)
-    
-    layers_test_df = df_layers[df_layers['origin'] == 'test'].reset_index(drop=True).drop(['origin'], axis=1)
-    layers_reference_df = df_layers[df_layers['origin'] == 'reference'].reset_index(drop=True).drop(['origin'], axis=1)
     
     try:
         assert_frame_equal(layers_test_df, layers_reference_df, check_dtype=False, check_index_type=False)
@@ -317,3 +314,4 @@ def test_draw_log(reader, colors, scenario):
         os.remove(provisory_file_path)
 
 
+#------------------------------- draw_legend

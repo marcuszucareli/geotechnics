@@ -222,14 +222,11 @@ def draw_legend(colors, msp):
     """
     
     multiplier = 0
-    
     box_heigth = 1
     distance_between_boxes = .5
     
     # Draw legend
     for material, color in colors.items():
-
-        
         
         # Calculate the initial y1 coordinate
         y_1 = - box_heigth - multiplier * (box_heigth + distance_between_boxes)
